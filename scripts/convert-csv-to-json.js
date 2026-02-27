@@ -1,7 +1,7 @@
 const fs = require('fs');
 const Papa = require('papaparse');
 
-const csvFile = '../../comments_mokuji.csv';  // ← ★ここを修正！
+const csvFile = '../../comments_mokuji.csv';
 const jsonFile = '../public/data/comments.json';
 
 Papa.parse(fs.readFileSync(csvFile, 'utf8'), {
