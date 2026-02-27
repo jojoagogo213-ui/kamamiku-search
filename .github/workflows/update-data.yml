@@ -51,7 +51,3 @@ jobs:
           git commit -m "📊 $(date +%Y-%m-%d) データ更新"
           git push
         fi
-
-          git commit -m "📊 $(date +%Y-%m-%d) データ更新（${{ github.run_number }}件）"
-          git push
-        fi
