@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>【かまみく】のあの回</title>
+    <style>
+        body { font-family: sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        input[type="file"], input[type="text"] { padding: 10px; margin: 5px; font-size: 16px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        .no-results { color: #666; text-align: center; padding: 40px; }
+        .drop-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; }
+        .drop-zone.dragover { border-color: #007bff; background: #f8f9ff; }
+        .hit-count { background: #e8f5e8; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .search-area { 
+            background: #f9f9f9; 
+            padding: 20px; 
+            border-radius: 8px; 
+            border: 1px solid #eee;
+            margin: 20px 0;
+        }
+        #fileStatus {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status-ready { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        .status-loaded { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .video-title { font-weight: bold; color: #333; }
+        .comment-section {
+            margin-top: 8px;
+        }
+        .comment-summary {
+            background: #f8f9fa; 
+            padding: 8px; 
+            border-radius: 4px; 
+            margin: 4px 0; 
+            font-size: 14px;
+            line-height: 1.4;
+            cursor: pointer;
+            border-left: 4px solid #007bff;
+        }
+        .comment-summary:hover {
+            background: #e9ecef;
+        }
+        .comment-full {
+            background: #f8f9fa; 
+            padding: 12px; 
+            border-radius: 4px; 
+            margin: 4px 0; 
+            font-size: 14px;
+            line-height: 1.5;
+            display: none;
+        }
+        .comment-item {
+            margin-bottom: 12px; /* コメント間の間隔 */
+            padding-left: 0.5em; /* 0.5文字分のインデント */
+        }
+        .comment-text {
+            position: relative;
+            padding-left: 1.5em; /* ■ + 半角スペース分の余白 */
+        }
+        .comment-text::before {
+            content: "■ "; /* ■の後ろに半角スペース */
+            position: absolute;
+            left: 0;
+            color: #007bff;
+            font-weight: bold;
+        }
+        .comment-count { color: #666; font-size: 12px; margin-top: 5px; }
+        .sort-btn {
+            background: none;
+            border: 1px solid #ccc;
+            padding: 2px 6px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 3px;
+            margin-left: 5px;
+        }
+        .sort-btn:hover { background: #f0f0f0; }
+        .sort-btn.asc::after { content: " ↑"; }
+        .sort-btn.desc::after { content: " ↓"; }
+        .sort-btn.default::after { content: " ↕"; }
+    </style>
+</head>
+<body>
+    <!-- 前半は変更なし -->
+    <h1 style="text-align:center">【かまみく】のあの回</h1>
+
+    <div id="fileStatus" class="status-ready" style="display: none;">
+        CSV未読み込み - <button onclick="document.getElementById('fileInput').click()" style="margin-left: 10px;">ファイルを選択して読み込み</button>
+    </div>
+
+    <div class="search-area" id="searchArea">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <input type="text" id="query" placeholder="キーワードで検索（例：編集長交代、小銭磨き、ア＊ル）" 
+                   oninput="searchData()" autofocus style="flex: 1; min-width: 300px;">
+            <div id="hitCount" class="hit-count" style="display: none;"></div>
+        </div>
+        <p style="margin: 10px 0 0 0; font-size: 14px; color: #666;">
+            <small>検索範囲：video_title と text列（目次本文）｜同じ動画は1行にまとめます</small>
+        </p>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <p>CSVファイルをここにドラッグ&ドロップ または</p>
+        <input type="file" id="fileInput" accept=".csv" style="display: none;">
+        <button onclick="document.getElementById('fileInput').click()">ファイルを選択</button>
+    </div>
+    
+    <div id="results">
+        <div id="loading" style="display: none;">読み込み中...</div>
+        <table id="dataTable" style="display: none;"></table>
+        <div id="noResults" class="no-results">
+            CSVファイルが読み込まれていません。ファイルをドロップして検索を開始してください。
+        </div>
+    </div>
+
+    <!-- JavaScriptは変更なし（前回と同じ） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script>
+        let csvData = [];
+        let headers = [];
+        let currentSort = { field: 'published_at', direction: 'desc' };
+        
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const searchArea = document.getElementById('searchArea');
+        const results = document.getElementById('results');
+        const dataTable = document.getElementById('dataTable');
+        const noResults = document.getElementById('noResults');
+        const hitCount = document.getElementById('hitCount');
+        const fileStatus = document.getElementById('fileStatus');
+        const queryInput = document.getElementById('query');
+
+        window.onload = function() {
+            fileStatus.style.display = 'block';
+            noResults.style.display = 'block';
+        };
+
+        dropZone.ondragover = e => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                loadCSV(file);
+            }
+        };
+
+        fileInput.onchange = e => {
+            const file = e.target.files[0];
+            if (file) loadCSV(file);
+        };
+
+        function loadCSV(file) {
+            document.getElementById('loading').style.display = 'block';
+            noResults.style.display = 'none';
+            
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    csvData = results.data;
+                    headers = results.meta.fields || [];
+                    
+                    if (!headers.includes('text')) {
+                        alert('CSVに "text" 列が見つかりません。\n列名を確認してください。');
+                        document.getElementById('loading').style.display = 'none';
+                        return;
+                    }
+                    
+                    fileStatus.textContent = `CSV読み込み完了（${csvData.length}件）`;
+                    fileStatus.className = 'status-loaded';
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    dataTable.style.display = 'table';
+                    noResults.style.display = 'none';
+                    
+                    searchData();
+                    queryInput.focus();
+                },
+                error: function(error) {
+                    alert('CSV読み込みエラー: ' + error);
+                    document.getElementById('loading').style.display = 'none';
+                }
+            });
+        }
+
+        function searchData() {
+            const query = queryInput.value.trim().toLowerCase();
+            const keywords = query ? query.split(/\s+/) : [];
+            
+            let filteredData = csvData.filter(row => {
+                const titleValue = (row.video_title || '').toString().toLowerCase();
+                const textValue = (row.text || '').toString().toLowerCase();
+                return keywords.length === 0 || keywords.every(keyword => 
+                    titleValue.includes(keyword) || textValue.includes(keyword)
+                );
+            });
+
+            const groupedData = {};
+            filteredData.forEach(row => {
+                const videoId = row.video_id || extractVideoId(row.video_url);
+                if (!videoId) return;
+                
+                if (!groupedData[videoId]) {
+                    groupedData[videoId] = {
+                        video_title: row.video_title || '',
+                        video_url: row.video_url || '',
+                        published_at: row.published_at || row.video_published_at || '',
+                        comments: []
+                    };
+                }
+                
+                if ((row.text || '').trim()) {
+                    groupedData[videoId].comments.push(row.text.trim());
+                }
+            });
+
+            let uniqueVideos = Object.values(groupedData);
+            uniqueVideos.sort((a, b) => {
+                let valA = formatDateForSort(a.published_at);
+                let valB = formatDateForSort(b.published_at);
+                
+                if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+                if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+                return 0;
+            });
+
+            hitCount.textContent = `${uniqueVideos.length}本の動画ヒット（${filteredData.length}件のコメント）`;
+            hitCount.style.display = uniqueVideos.length > 0 ? 'block' : 'none';
+
+            if (uniqueVideos.length === 0) {
+                dataTable.innerHTML = '<tr><td colspan="3">検索結果がありません</td></tr>';
+                dataTable.style.display = 'table';
+                return;
+            }
+
+            let tableHTML = `
+                <thead>
+                    <tr>
+                        <th style="width: 50%;">動画タイトル</th>
+                        <th style="width: 20%;">
+                            公開日時 
+                            <button class="sort-btn ${currentSort.direction}" onclick="toggleSort()">${currentSort.direction}</button>
+                        </th>
+                        <th style="width: 30%;">再生・コメント</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            uniqueVideos.forEach((video, index) => {
+                const formattedDate = formatDate(video.published_at);
+                const firstComment = video.comments[0] || '';
+                const previewText = getFirstCommentPreview(firstComment);
+                
+                tableHTML += `
+                    <tr>
+                        <td class="video-title">${escapeHtml(video.video_title)}</td>
+                        <td style="white-space: nowrap; font-size: 14px;">
+                            ${formattedDate || '−'}
+                        </td>
+                        <td>
+                            ${video.video_url ? 
+                                `<a href="${escapeHtml(video.video_url)}" target="_blank" style="color: #ff0000; text-decoration: none; font-weight: bold; font-size: 16px;">▶ YouTube</a>` : 
+                                '−'
+                            }
+                            <div class="comment-count">
+                                ${video.comments.length}件のコメント
+                            </div>
+                            <div class="comment-section">
+                                <div class="comment-summary" onclick="toggleComments(${index})" id="summary-${index}">
+                                    ${previewText}
+                                    <span style="float: right; font-size: 12px; color: #007bff;">▼ 全文</span>
+                                </div>
+                                <div class="comment-full" id="full-${index}">`;
+                
+                video.comments.forEach(comment => {
+                    tableHTML += `
+                        <div class="comment-item">
+                            <div class="comment-text">${escapeHtml(comment)}</div>
+                        </div>`;
+                });
+                
+                tableHTML += `
+                                </div>
+                            </div>
+                        </td>
+                    </tr>`;
+            });
+            
+            dataTable.innerHTML = tableHTML + '</tbody>';
+            dataTable.style.display = 'table';
+        }
+
+        function getFirstCommentPreview(comment) {
+            if (!comment) return 'コメントなし';
+            const lines = comment.split('\n');
+            const previewLines = lines.slice(0, 3).join('\n');
+            return previewLines.length > 100 ? previewLines.substring(0, 100) + '...' : previewLines;
+        }
+
+        function toggleComments(index) {
+            const summary = document.getElementById(`summary-${index}`);
+            const full = document.getElementById(`full-${index}`);
+            
+            if (full.style.display === 'block') {
+                full.style.display = 'none';
+                summary.querySelector('span').textContent = '▼ 全文';
+            } else {
+                full.style.display = 'block';
+                summary.querySelector('span').textContent = '▲ 縮小';
+            }
+        }
+
+        function toggleSort() {
+            if (currentSort.direction === 'desc') {
+                currentSort.direction = 'asc';
+            } else {
+                currentSort.direction = 'desc';
+            }
+            searchData();
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const date = new Date(dateStr);
+                return date.toISOString().split('T')[0];
+            } catch {
+                return dateStr;
+            }
+        }
+
+        function formatDateForSort(dateStr) {
+            if (!dateStr) return 0;
+            try {
+                const date = new Date(dateStr);
+                return date.getTime();
+            } catch {
+                return 0;
+            }
+        }
+
+        function extractVideoId(url) {
+            if (!url) return null;
+            const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
+            return match ? match[1] : null;
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+    </script>
+</body>
+</html>
