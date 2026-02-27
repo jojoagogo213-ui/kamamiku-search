@@ -2,7 +2,7 @@ name: 更新データベース（木曜正午）
 
 on:
   schedule:
-    - cron: '0 12 * * 4'
+    - cron: '0 12 * * 4'  # 毎週木曜 正午（JST）
   workflow_dispatch:
 
 jobs:
@@ -11,43 +11,35 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: 📁 ファイル確認
+    - name: CSVファイル確認
       run: |
-        echo "=== リポジトリ直下 ==="
-        ls -la comments_mokuji.csv || echo "❌ comments_mokuji.csv なし"
-        echo "=== scripts/内 ==="
-        ls -la scripts/
-        echo "=== public/data/ ==="
-        ls -la public/data/
+        ls -la comments_mokuji.csv || echo "❌ CSVファイルが見つかりません！"
+        pwd
     
     - name: Node.jsセットアップ
       uses: actions/setup-node@v4
       with:
         node-version: '20'
     
-    - name: 📦 依存関係インストール
+    - name: 依存関係インストール
       run: npm install
     
-    - name: 🔄 CSV→JSON変換
+    - name: CSV→JSON変換
+      run: node scripts/convert-csv-to-json.js
+      
+    - name: 変換結果確認
       run: |
-        echo "CSVファイル読み込み確認..."
-        ls -la comments_mokuji.csv
-        node scripts/convert-csv-to-json.js
-    
-    - name: ✅ 結果確認
-      run: |
-        echo "=== 生成されたJSON ==="
         ls -la public/data/comments.json
-        head -n 10 public/data/comments.json
+        head -n 5 public/data/comments.json
     
-    - name: 🚀 コミット＆プッシュ
+    - name: コミット＆プッシュ
       run: |
         git config user.name "GitHub Action"
         git config user.email "action@github.com"
         git add public/data/comments.json
         if git diff --staged --quiet; then
-          echo "ℹ️  変更なし、スキップ"
+          echo "変更なし、スキップ"
         else
-          git commit -m "📊 $(date +%Y-%m-%d) データ更新"
+          git commit -m "📊 $(date +%Y-%m-%d) データ更新（${{ github.run_number }}件）"
           git push
         fi
